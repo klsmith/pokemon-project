@@ -32,39 +32,29 @@ main =
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( LoadingList
-        { theme = darkTheme
-        , page =
-            { pageNumber = 1
-            , pageSize = 20
-            }
-        }
+    ( { theme = darkTheme
+      , state = LoadingList
+      }
     , Http.get
         { url = "https://pokeapi.co/api/v2/pokemon?offset=0&limit=20"
-        , expect = Http.expectString LoadList
+        , expect = Http.expectString (\result -> StateMsg (LoadList result))
         }
     )
 
 
-type Model
-    = LoadingList Common
-    | FailLoadingList Common Http.Error
-    | ViewList Common Results
-    | LoadingSingle Common Results
-    | FailLoadingSingle Common Results Http.Error
-    | ViewSingle Common Results PokemonHeavy
-
-
-type alias Common =
+type alias Model =
     { theme : ColorTheme
-    , page : Page
+    , state : State
     }
 
 
-type alias Page =
-    { pageNumber : Int
-    , pageSize : Int
-    }
+type State
+    = LoadingList
+    | FailLoadingList Http.Error
+    | ViewList Results
+    | LoadingSingle Results
+    | FailLoadingSingle Results Http.Error
+    | ViewSingle Results PokemonHeavy
 
 
 type alias Results =
@@ -101,80 +91,41 @@ type TypeField
 
 
 type Msg
+    = ChangeTheme ColorTheme
+    | StateMsg StateMsg
+
+
+type StateMsg
     = LoadList (Result Http.Error String)
-    | ChangeTheme ColorTheme
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        LoadList httpResult ->
-            ( updateViewList model httpResult, Cmd.none )
-
         ChangeTheme newTheme ->
-            ( changeTheme newTheme model, Cmd.none )
+            ( { model | theme = newTheme }, Cmd.none )
+
+        StateMsg stateMsg ->
+            case stateMsg of
+                LoadList httpResult ->
+                    ( updateViewList model httpResult, Cmd.none )
 
 
 updateViewList : Model -> Result Http.Error String -> Model
 updateViewList model httpResult =
-    let
-        common =
-            extractCommon model
-    in
     case httpResult of
         Ok json ->
-            ViewList common
-                { count = 151
-                , pokemon = []
-                , raw = json
-                }
+            { model
+                | state =
+                    ViewList
+                        { count = 151
+                        , pokemon = []
+                        , raw = json
+                        }
+            }
 
         Err error ->
-            FailLoadingList common error
-
-
-changeTheme : ColorTheme -> Model -> Model
-changeTheme newTheme model =
-    case model of
-        LoadingList common ->
-            LoadingList { common | theme = newTheme }
-
-        FailLoadingList common error ->
-            FailLoadingList { common | theme = newTheme } error
-
-        ViewList common results ->
-            ViewList { common | theme = newTheme } results
-
-        LoadingSingle common results ->
-            LoadingSingle { common | theme = newTheme } results
-
-        FailLoadingSingle common results error ->
-            FailLoadingSingle { common | theme = newTheme } results error
-
-        ViewSingle common results pokemon ->
-            ViewSingle { common | theme = newTheme } results pokemon
-
-
-extractCommon : Model -> Common
-extractCommon model =
-    case model of
-        LoadingList common ->
-            common
-
-        FailLoadingList common _ ->
-            common
-
-        ViewList common _ ->
-            common
-
-        LoadingSingle common _ ->
-            common
-
-        FailLoadingSingle common _ _ ->
-            common
-
-        ViewSingle common _ _ ->
-            common
+            { model | state = FailLoadingList error }
 
 
 
@@ -194,29 +145,29 @@ view : Model -> Html Msg
 view model =
     let
         theme =
-            (extractCommon model).theme
+            model.theme
     in
     layout
         [ Background.color theme.background
         , Font.color theme.text
         ]
-        (case model of
-            LoadingList common ->
+        (case model.state of
+            LoadingList ->
                 debugView "LoadingList"
 
-            FailLoadingList common error ->
+            FailLoadingList error ->
                 debugView ( "FailLoadingList", error )
 
-            ViewList common results ->
+            ViewList results ->
                 debugView ( "ViewList", results )
 
-            LoadingSingle common results ->
+            LoadingSingle results ->
                 debugView ( "LoadingSingle", results )
 
-            FailLoadingSingle common results error ->
+            FailLoadingSingle results error ->
                 debugView ( "FailLoadingSingle", results, error )
 
-            ViewSingle common results pokemon ->
+            ViewSingle results pokemon ->
                 debugView ( "ViewSingle", results, pokemon )
         )
 
