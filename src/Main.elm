@@ -10,8 +10,7 @@ import Element.Font as Font
 import Element.Input as Input
 import Html exposing (Html)
 import Http
-import Page.List exposing (Results, resultsDecoder, viewList)
-import Pokemon exposing (PokemonHeavy, PokemonLight, pokemonLightDecoder)
+import Pokemon exposing (PokemonList, pokemonListDecoder)
 import ViewUtil exposing (debugView)
 
 
@@ -41,8 +40,8 @@ init _ =
         { url = "https://pokeapi.co/api/v2/pokemon?offset=0&limit=20"
         , expect =
             Http.expectJson
-                (\result -> StateMsg (LoadList result))
-                resultsDecoder
+                (\result -> PageMsg (LoadList result))
+                pokemonListDecoder
         }
     )
 
@@ -56,10 +55,7 @@ type alias Model =
 type Page
     = LoadingList
     | FailLoadingList Http.Error
-    | ViewList Results
-    | LoadingSingle Results
-    | FailLoadingSingle Results Http.Error
-    | ViewSingle Results PokemonHeavy
+    | ViewList PokemonList
 
 
 
@@ -68,12 +64,12 @@ type Page
 
 type Msg
     = ChangeTheme ColorTheme
-    | StateMsg StateMsg
+    | PageMsg PageMsg
 
 
-type StateMsg
-    = LoadList (Result Http.Error Results)
-    | LoadImage Int String
+type PageMsg
+    = LoadList (Result Http.Error PokemonList)
+    | RequestLoad String
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -82,28 +78,58 @@ update msg model =
         ChangeTheme newTheme ->
             ( { model | theme = newTheme }, Cmd.none )
 
-        StateMsg stateMsg ->
-            case stateMsg of
-                LoadList httpResult ->
-                    ( updateLoadList model httpResult, Cmd.none )
-
-                LoadImage index url ->
-                    ( updateLoadImage index url model, Cmd.none )
-
-
-updateLoadList : Model -> Result Http.Error Results -> Model
-updateLoadList model httpResult =
-    case httpResult of
-        Ok results ->
-            { model | page = ViewList results }
-
-        Err error ->
-            { model | page = FailLoadingList error }
+        PageMsg pageMsg ->
+            let
+                ( newPage, cmd ) =
+                    updatePageMsg pageMsg model.page
+            in
+            ( { model | page = newPage }, cmd )
 
 
-updateLoadImage : Int -> String -> Model -> Model
-updateLoadImage index url model =
-    model
+updatePageMsg : PageMsg -> Page -> ( Page, Cmd Msg )
+updatePageMsg pageMsg page =
+    case page of
+        LoadingList ->
+            updateLoadingListPage pageMsg page
+
+        FailLoadingList err ->
+            ( page, Cmd.none )
+
+        ViewList pokemonList ->
+            updateViewListPage pageMsg page
+
+
+updateLoadingListPage : PageMsg -> Page -> ( Page, Cmd Msg )
+updateLoadingListPage pageMsg page =
+    case pageMsg of
+        LoadList httpResult ->
+            case httpResult of
+                Ok pokemonList ->
+                    ( ViewList pokemonList, Cmd.none )
+
+                Err error ->
+                    ( FailLoadingList error, Cmd.none )
+
+        _ ->
+            ( page, Cmd.none )
+
+
+updateViewListPage : PageMsg -> Page -> ( Page, Cmd Msg )
+updateViewListPage pageMsg page =
+    case pageMsg of
+        RequestLoad url ->
+            ( LoadingList
+            , Http.get
+                { url = url
+                , expect =
+                    Http.expectJson
+                        (\result -> PageMsg (LoadList result))
+                        pokemonListDecoder
+                }
+            )
+
+        _ ->
+            ( page, Cmd.none )
 
 
 
@@ -121,16 +147,12 @@ subscriptions model =
 
 view : Model -> Html Msg
 view model =
-    let
-        theme =
-            model.theme
-    in
     layout
-        [ Background.color theme.background
-        , Font.color theme.text
+        [ Background.color model.theme.background
+        , Font.color model.theme.text
         ]
-        (column []
-            [ themeButton theme
+        (column [ Element.spacing 8 ]
+            [ themeButton model.theme
             , case model.page of
                 LoadingList ->
                     debugView "LoadingList"
@@ -138,26 +160,30 @@ view model =
                 FailLoadingList error ->
                     debugView ( "FailLoadingList", error )
 
-                ViewList results ->
-                    viewList theme results
-
-                LoadingSingle results ->
-                    debugView ( "LoadingSingle", results )
-
-                FailLoadingSingle results error ->
-                    debugView ( "FailLoadingSingle", results, error )
-
-                ViewSingle results pokemon ->
-                    debugView ( "ViewSingle", results, pokemon )
+                ViewList pokemonList ->
+                    viewList model.theme pokemonList
             ]
         )
 
 
-viewPokemonLight : PokemonLight -> Element Msg
-viewPokemonLight pokemonLight =
+viewList : ColorTheme -> PokemonList -> Element Msg
+viewList theme pokemonList =
+    column [ Element.spacing 8 ]
+        [ wrappedRow [ Element.spacing 8 ]
+            [ text "Count:"
+            , text (String.fromInt pokemonList.count)
+            , previousButton pokemonList
+            , nextButton pokemonList
+            ]
+        , wrappedRow [ Element.spacing 8 ]
+            (Array.toList (Array.map viewPokemonListResult pokemonList.results))
+        ]
+
+
+viewPokemonListResult : Pokemon.ListResult -> Element Msg
+viewPokemonListResult result =
     column
         [ Element.spacing 8
-        , Font.center
         ]
         [ Element.image
             [ Border.width 1
@@ -166,11 +192,15 @@ viewPokemonLight pokemonLight =
             ]
             { src =
                 Maybe.withDefault
-                    "https://upload.wikimedia.org/wikipedia/en/1/13/Parabolic_dish_motion_circle.gif"
-                    pokemonLight.sprite
-            , description = pokemonLight.name
+                    "https://i.pinimg.com/originals/0d/03/45/0d0345f662a757ef17eef497fa8e83fc.gif"
+                    result.sprite
+            , description = result.name
             }
-        , text pokemonLight.name
+        , el
+            [ Font.center
+            , Element.centerX
+            ]
+            (text result.name)
         ]
 
 
@@ -186,6 +216,34 @@ themeButton theme =
         ]
         { label = text nextTheme.name
         , onPress = Just (ChangeTheme nextTheme)
+        }
+
+
+previousButton : PokemonList -> Element Msg
+previousButton pokemonList =
+    Input.button
+        [ Border.width 1
+        , Element.padding 8
+        ]
+        { label = text "Previous"
+        , onPress =
+            Maybe.map
+                (\url -> PageMsg (RequestLoad url))
+                pokemonList.previous
+        }
+
+
+nextButton : PokemonList -> Element Msg
+nextButton pokemonList =
+    Input.button
+        [ Border.width 1
+        , Element.padding 8
+        ]
+        { label = text "Next"
+        , onPress =
+            Maybe.map
+                (\url -> PageMsg (RequestLoad url))
+                pokemonList.next
         }
 
 
