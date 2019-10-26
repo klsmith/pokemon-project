@@ -1,16 +1,18 @@
 module Main exposing (Model, Msg(..), init, main, update, view)
 
+import Array exposing (Array)
 import Browser
 import ColorTheme exposing (ColorTheme, darkTheme, lightTheme)
-import Element exposing (Attribute, Color, Element, FocusStyle, alignLeft, alignRight, centerX, centerY, column, el, fill, focusStyle, layout, rgb, row, text)
+import Element exposing (Element, column, el, fill, layout, px, row, text, wrappedRow)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Font as Font
 import Element.Input as Input
 import Html exposing (Html)
-import Html.Events
 import Http
-import Json.Decode as Decode
+import Page.List exposing (Results, resultsDecoder, viewList)
+import Pokemon exposing (PokemonHeavy, PokemonLight, pokemonLightDecoder)
+import ViewUtil exposing (debugView)
 
 
 
@@ -33,57 +35,31 @@ main =
 init : () -> ( Model, Cmd Msg )
 init _ =
     ( { theme = darkTheme
-      , state = LoadingList
+      , page = LoadingList
       }
     , Http.get
         { url = "https://pokeapi.co/api/v2/pokemon?offset=0&limit=20"
-        , expect = Http.expectString (\result -> StateMsg (LoadList result))
+        , expect =
+            Http.expectJson
+                (\result -> StateMsg (LoadList result))
+                resultsDecoder
         }
     )
 
 
 type alias Model =
     { theme : ColorTheme
-    , state : State
+    , page : Page
     }
 
 
-type State
+type Page
     = LoadingList
     | FailLoadingList Http.Error
     | ViewList Results
     | LoadingSingle Results
     | FailLoadingSingle Results Http.Error
     | ViewSingle Results PokemonHeavy
-
-
-type alias Results =
-    { count : Int
-    , pokemon : List PokemonLight
-    , raw : String
-    }
-
-
-type alias PokemonLight =
-    { name : String
-    , url : String
-    , sprite : Maybe String
-    }
-
-
-type alias PokemonHeavy =
-    { id : Int
-    , name : String
-    , sprite : String
-    , types : TypeField
-    , height : Int
-    , weight : Int
-    }
-
-
-type TypeField
-    = SingleTypeField String
-    | DoubleTypeField String String
 
 
 
@@ -96,7 +72,8 @@ type Msg
 
 
 type StateMsg
-    = LoadList (Result Http.Error String)
+    = LoadList (Result Http.Error Results)
+    | LoadImage Int String
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -108,24 +85,25 @@ update msg model =
         StateMsg stateMsg ->
             case stateMsg of
                 LoadList httpResult ->
-                    ( updateViewList model httpResult, Cmd.none )
+                    ( updateLoadList model httpResult, Cmd.none )
+
+                LoadImage index url ->
+                    ( updateLoadImage index url model, Cmd.none )
 
 
-updateViewList : Model -> Result Http.Error String -> Model
-updateViewList model httpResult =
+updateLoadList : Model -> Result Http.Error Results -> Model
+updateLoadList model httpResult =
     case httpResult of
-        Ok json ->
-            { model
-                | state =
-                    ViewList
-                        { count = 151
-                        , pokemon = []
-                        , raw = json
-                        }
-            }
+        Ok results ->
+            { model | page = ViewList results }
 
         Err error ->
-            { model | state = FailLoadingList error }
+            { model | page = FailLoadingList error }
+
+
+updateLoadImage : Int -> String -> Model -> Model
+updateLoadImage index url model =
+    model
 
 
 
@@ -153,7 +131,7 @@ view model =
         ]
         (column []
             [ themeButton theme
-            , case model.state of
+            , case model.page of
                 LoadingList ->
                     debugView "LoadingList"
 
@@ -175,15 +153,24 @@ view model =
         )
 
 
-debugView : a -> Element Msg
-debugView thing =
-    Element.paragraph [] [ text (Debug.toString thing) ]
-
-
-viewList : ColorTheme -> Results -> Element Msg
-viewList theme results =
-    column []
-        [ debugView results
+viewPokemonLight : PokemonLight -> Element Msg
+viewPokemonLight pokemonLight =
+    column
+        [ Element.spacing 8
+        , Font.center
+        ]
+        [ Element.image
+            [ Border.width 1
+            , Element.width (px 96)
+            , Element.height (px 96)
+            ]
+            { src =
+                Maybe.withDefault
+                    "https://upload.wikimedia.org/wikipedia/en/1/13/Parabolic_dish_motion_circle.gif"
+                    pokemonLight.sprite
+            , description = pokemonLight.name
+            }
+        , text pokemonLight.name
         ]
 
 
@@ -209,25 +196,3 @@ computeNextTheme theme =
 
     else
         ColorTheme.lightTheme
-
-
-
--- External Code
-
-
-{-| -}
-onEnter : Msg -> Element.Attribute Msg
-onEnter msg =
-    Element.htmlAttribute
-        (Html.Events.on "keyup"
-            (Decode.field "key" Decode.string
-                |> Decode.andThen
-                    (\key ->
-                        if key == "Enter" then
-                            Decode.succeed msg
-
-                        else
-                            Decode.fail "Not the enter key"
-                    )
-            )
-        )
