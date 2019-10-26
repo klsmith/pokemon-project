@@ -151,24 +151,27 @@ view model =
         [ Background.color theme.background
         , Font.color theme.text
         ]
-        (case model.state of
-            LoadingList ->
-                debugView "LoadingList"
+        (column []
+            [ themeButton theme
+            , case model.state of
+                LoadingList ->
+                    debugView "LoadingList"
 
-            FailLoadingList error ->
-                debugView ( "FailLoadingList", error )
+                FailLoadingList error ->
+                    debugView ( "FailLoadingList", error )
 
-            ViewList results ->
-                debugView ( "ViewList", results )
+                ViewList results ->
+                    viewList theme results
 
-            LoadingSingle results ->
-                debugView ( "LoadingSingle", results )
+                LoadingSingle results ->
+                    debugView ( "LoadingSingle", results )
 
-            FailLoadingSingle results error ->
-                debugView ( "FailLoadingSingle", results, error )
+                FailLoadingSingle results error ->
+                    debugView ( "FailLoadingSingle", results, error )
 
-            ViewSingle results pokemon ->
-                debugView ( "ViewSingle", results, pokemon )
+                ViewSingle results pokemon ->
+                    debugView ( "ViewSingle", results, pokemon )
+            ]
         )
 
 
@@ -177,14 +180,35 @@ debugView thing =
     Element.paragraph [] [ text (Debug.toString thing) ]
 
 
+viewList : ColorTheme -> Results -> Element Msg
+viewList theme results =
+    column []
+        [ debugView results
+        ]
+
+
+themeButton : ColorTheme -> Element Msg
 themeButton theme =
+    let
+        nextTheme =
+            computeNextTheme theme
+    in
     Input.button
         [ Border.width 1
         , Element.padding 8
         ]
-        { label = text theme.name
-        , onPress = Just (ChangeTheme theme)
+        { label = text nextTheme.name
+        , onPress = Just (ChangeTheme nextTheme)
         }
+
+
+computeNextTheme : ColorTheme -> ColorTheme
+computeNextTheme theme =
+    if "Light Theme" == theme.name then
+        ColorTheme.darkTheme
+
+    else
+        ColorTheme.lightTheme
 
 
 
