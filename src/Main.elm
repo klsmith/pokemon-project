@@ -10,7 +10,7 @@ import Element.Font as Font
 import Element.Input as Input
 import Html exposing (Html)
 import Http
-import Pokemon exposing (PokemonList, pokemonListDecoder)
+import Pokemon exposing (PokemonList, PokemonSprite, pokemonListDecoder, pokemonSpriteDecoder)
 import ViewUtil exposing (debugView)
 
 
@@ -34,13 +34,13 @@ main =
 init : () -> ( Model, Cmd Msg )
 init _ =
     ( { theme = darkTheme
-      , page = LoadingList
+      , page = LoadingPage
       }
     , Http.get
         { url = "https://pokeapi.co/api/v2/pokemon?offset=0&limit=20"
         , expect =
             Http.expectJson
-                (\result -> PageMsg (LoadList result))
+                (asPageMsg AcceptListResponse)
                 pokemonListDecoder
         }
     )
@@ -53,9 +53,9 @@ type alias Model =
 
 
 type Page
-    = LoadingList
-    | FailLoadingList Http.Error
-    | ViewList PokemonList
+    = LoadingPage
+    | LoadingFailurePage Http.Error
+    | ListPage PokemonList
 
 
 
@@ -68,8 +68,17 @@ type Msg
 
 
 type PageMsg
-    = LoadList (Result Http.Error PokemonList)
-    | RequestLoad String
+    = AcceptListResponse PokemonListResponse
+    | RequestList String
+    | AcceptImageResponse PokemonSpriteResponse
+
+
+type alias PokemonListResponse =
+    Result Http.Error PokemonList
+
+
+type alias PokemonSpriteResponse =
+    Result Http.Error PokemonSprite
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -89,46 +98,106 @@ update msg model =
 updatePageMsg : PageMsg -> Page -> ( Page, Cmd Msg )
 updatePageMsg pageMsg page =
     case page of
-        LoadingList ->
+        LoadingPage ->
             updateLoadingListPage pageMsg page
 
-        FailLoadingList err ->
+        LoadingFailurePage err ->
             ( page, Cmd.none )
 
-        ViewList pokemonList ->
-            updateViewListPage pageMsg page
+        ListPage pokemonList ->
+            updateViewListPage pageMsg page pokemonList
 
 
 updateLoadingListPage : PageMsg -> Page -> ( Page, Cmd Msg )
 updateLoadingListPage pageMsg page =
     case pageMsg of
-        LoadList httpResult ->
+        AcceptListResponse httpResult ->
             case httpResult of
-                Ok pokemonList ->
-                    ( ViewList pokemonList, Cmd.none )
+                Ok newPokemonList ->
+                    ( ListPage newPokemonList
+                    , Cmd.batch (pokemonImageCommandList newPokemonList)
+                    )
 
                 Err error ->
-                    ( FailLoadingList error, Cmd.none )
+                    ( LoadingFailurePage error, Cmd.none )
 
-        _ ->
+        RequestList _ ->
+            ( page, Cmd.none )
+
+        AcceptImageResponse _ ->
             ( page, Cmd.none )
 
 
-updateViewListPage : PageMsg -> Page -> ( Page, Cmd Msg )
-updateViewListPage pageMsg page =
+pokemonImageCommandList : PokemonList -> List (Cmd Msg)
+pokemonImageCommandList pokemonList =
+    Array.toList (Array.indexedMap pokemonImageCommand pokemonList.results)
+
+
+pokemonImageCommand : Int -> Pokemon.ListResult -> Cmd Msg
+pokemonImageCommand index result =
+    Http.get
+        { url = "https://pokeapi.co/api/v2/pokemon/" ++ result.name
+        , expect =
+            Http.expectJson
+                (asPageMsg AcceptImageResponse)
+                (pokemonSpriteDecoder index)
+        }
+
+
+updateViewListPage : PageMsg -> Page -> PokemonList -> ( Page, Cmd Msg )
+updateViewListPage pageMsg page pokemonList =
     case pageMsg of
-        RequestLoad url ->
-            ( LoadingList
+        RequestList url ->
+            ( LoadingPage
             , Http.get
                 { url = url
                 , expect =
                     Http.expectJson
-                        (\result -> PageMsg (LoadList result))
+                        (asPageMsg AcceptListResponse)
                         pokemonListDecoder
                 }
             )
 
-        _ ->
+        AcceptImageResponse httpResult ->
+            case httpResult of
+                Ok pokemonSprite ->
+                    let
+                        results =
+                            pokemonList.results
+
+                        index =
+                            pokemonSprite.index
+
+                        sprite =
+                            pokemonSprite.sprites.frontDefault
+
+                        listResult =
+                            Array.get index results
+
+                        newListResult =
+                            case listResult of
+                                Just lr ->
+                                    Just { lr | sprite = Just sprite }
+
+                                Nothing ->
+                                    Nothing
+                    in
+                    case newListResult of
+                        Just newLr ->
+                            ( ListPage
+                                { pokemonList
+                                    | results = Array.set index newLr results
+                                }
+                            , Cmd.none
+                            )
+
+                        Nothing ->
+                            ( ListPage pokemonList, Cmd.none )
+
+                Err err ->
+                    ( LoadingFailurePage err, Cmd.none )
+
+        AcceptListResponse _ ->
             ( page, Cmd.none )
 
 
@@ -154,13 +223,13 @@ view model =
         (column [ Element.spacing 8 ]
             [ themeButton model.theme
             , case model.page of
-                LoadingList ->
-                    debugView "LoadingList"
+                LoadingPage ->
+                    text "Loading..."
 
-                FailLoadingList error ->
+                LoadingFailurePage error ->
                     debugView ( "FailLoadingList", error )
 
-                ViewList pokemonList ->
+                ListPage pokemonList ->
                     viewList model.theme pokemonList
             ]
         )
@@ -191,9 +260,7 @@ viewPokemonListResult result =
             , Element.height (px 96)
             ]
             { src =
-                Maybe.withDefault
-                    "https://i.pinimg.com/originals/0d/03/45/0d0345f662a757ef17eef497fa8e83fc.gif"
-                    result.sprite
+                Maybe.withDefault spinnerUrl result.sprite
             , description = result.name
             }
         , el
@@ -202,6 +269,11 @@ viewPokemonListResult result =
             ]
             (text result.name)
         ]
+
+
+spinnerUrl : String
+spinnerUrl =
+    "https://i.pinimg.com/originals/0d/03/45/0d0345f662a757ef17eef497fa8e83fc.gif"
 
 
 themeButton : ColorTheme -> Element Msg
@@ -228,7 +300,7 @@ previousButton pokemonList =
         { label = text "Previous"
         , onPress =
             Maybe.map
-                (\url -> PageMsg (RequestLoad url))
+                (asPageMsg RequestList)
                 pokemonList.previous
         }
 
@@ -242,7 +314,7 @@ nextButton pokemonList =
         { label = text "Next"
         , onPress =
             Maybe.map
-                (\url -> PageMsg (RequestLoad url))
+                (asPageMsg RequestList)
                 pokemonList.next
         }
 
@@ -254,3 +326,12 @@ computeNextTheme theme =
 
     else
         ColorTheme.lightTheme
+
+
+
+-- UTILITY
+
+
+asPageMsg : (a -> PageMsg) -> a -> Msg
+asPageMsg constructor value =
+    PageMsg (constructor value)

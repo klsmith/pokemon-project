@@ -46,6 +46,34 @@ listResultDecoder =
 
 
 
+-- ImageSpec
+
+
+type alias PokemonSprite =
+    { index : Int
+    , sprites : Sprites
+    }
+
+
+pokemonSpriteDecoder : Int -> Decoder PokemonSprite
+pokemonSpriteDecoder index =
+    succeed PokemonSprite
+        |> andMap (succeed index)
+        |> andMap (field "sprites" spritesDecoder)
+
+
+type alias Sprites =
+    { frontDefault : String
+    }
+
+
+spritesDecoder : Decoder Sprites
+spritesDecoder =
+    succeed Sprites
+        |> andMap (field "front_default" string)
+
+
+
 -- Details
 
 
