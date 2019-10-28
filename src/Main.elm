@@ -195,7 +195,7 @@ updateViewListPage pageMsg page pokemonList =
                             ( ListPage pokemonList, Cmd.none )
 
                 Err err ->
-                    ( LoadingFailurePage err, Cmd.none )
+                    ( page, Cmd.none )
 
         AcceptListResponse _ ->
             ( page, Cmd.none )
@@ -252,20 +252,28 @@ viewList theme pokemonList =
 viewPokemonListResult : Pokemon.ListResult -> Element Msg
 viewPokemonListResult result =
     column
-        [ Element.spacing 8
+        [ Border.width 1
         ]
-        [ Element.image
-            [ Border.width 1
-            , Element.width (px 96)
+        [ el
+            [ Element.width (px 96)
             , Element.height (px 96)
+            , Element.centerX
             ]
-            { src =
-                Maybe.withDefault spinnerUrl result.sprite
-            , description = result.name
-            }
+            (Element.image
+                [ Element.centerX
+                , Element.centerY
+                , Element.width (fill |> Element.maximum 96)
+                , Element.height (fill |> Element.maximum 96)
+                ]
+                { src =
+                    Maybe.withDefault spinnerUrl result.sprite
+                , description = result.name
+                }
+            )
         , el
             [ Font.center
             , Element.centerX
+            , Element.padding 8
             ]
             (text result.name)
         ]
