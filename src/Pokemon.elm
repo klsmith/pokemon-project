@@ -50,15 +50,13 @@ listResultDecoder =
 
 
 type alias PokemonSprite =
-    { index : Int
-    , sprites : Sprites
+    { sprites : Sprites
     }
 
 
-pokemonSpriteDecoder : Int -> Decoder PokemonSprite
-pokemonSpriteDecoder index =
+pokemonSpriteDecoder : Decoder PokemonSprite
+pokemonSpriteDecoder =
     succeed PokemonSprite
-        |> andMap (succeed index)
         |> andMap (field "sprites" spritesDecoder)
 
 

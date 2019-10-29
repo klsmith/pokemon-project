@@ -70,7 +70,7 @@ type Msg
 type PageMsg
     = AcceptListResponse PokemonListResponse
     | RequestList String
-    | AcceptImageResponse PokemonSpriteResponse
+    | AcceptImageResponse Int PokemonSpriteResponse
 
 
 type alias PokemonListResponse =
@@ -124,7 +124,7 @@ updateLoadingListPage pageMsg page =
         RequestList _ ->
             ( page, Cmd.none )
 
-        AcceptImageResponse _ ->
+        AcceptImageResponse _ _ ->
             ( page, Cmd.none )
 
 
@@ -139,8 +139,8 @@ pokemonImageCommand index result =
         { url = "https://pokeapi.co/api/v2/pokemon/" ++ result.name
         , expect =
             Http.expectJson
-                (asPageMsg AcceptImageResponse)
-                (pokemonSpriteDecoder index)
+                (asPageMsg (AcceptImageResponse index))
+                pokemonSpriteDecoder
         }
 
 
@@ -158,21 +158,19 @@ updateViewListPage pageMsg page pokemonList =
                 }
             )
 
-        AcceptImageResponse httpResult ->
+        AcceptImageResponse index httpResult ->
+            let
+                results =
+                    pokemonList.results
+
+                listResult =
+                    Array.get index results
+            in
             case httpResult of
                 Ok pokemonSprite ->
                     let
-                        results =
-                            pokemonList.results
-
-                        index =
-                            pokemonSprite.index
-
                         sprite =
                             pokemonSprite.sprites.frontDefault
-
-                        listResult =
-                            Array.get index results
 
                         newListResult =
                             case listResult of
@@ -192,10 +190,29 @@ updateViewListPage pageMsg page pokemonList =
                             )
 
                         Nothing ->
-                            ( ListPage pokemonList, Cmd.none )
+                            ( page, Cmd.none )
 
                 Err err ->
-                    ( page, Cmd.none )
+                    let
+                        newListResult =
+                            case listResult of
+                                Just lr ->
+                                    Just { lr | sprite = Just "https://friconix.com/png/fi-htluxl-question-mark.png" }
+
+                                Nothing ->
+                                    Nothing
+                    in
+                    case newListResult of
+                        Just newLr ->
+                            ( ListPage
+                                { pokemonList
+                                    | results = Array.set index newLr results
+                                }
+                            , Cmd.none
+                            )
+
+                        Nothing ->
+                            ( page, Cmd.none )
 
         AcceptListResponse _ ->
             ( page, Cmd.none )
