@@ -6257,13 +6257,13 @@ var $elm$core$Array$indexedMap = F2(
 			true,
 			A3($elm$core$Elm$JsArray$foldl, helper, initialBuilder, tree));
 	});
-var $author$project$Main$AcceptImageResponse = function (a) {
-	return {$: 'AcceptImageResponse', a: a};
-};
-var $author$project$Pokemon$PokemonSprite = F2(
-	function (index, sprites) {
-		return {index: index, sprites: sprites};
+var $author$project$Main$AcceptImageResponse = F2(
+	function (a, b) {
+		return {$: 'AcceptImageResponse', a: a, b: b};
 	});
+var $author$project$Pokemon$PokemonSprite = function (sprites) {
+	return {sprites: sprites};
+};
 var $author$project$Pokemon$Sprites = function (frontDefault) {
 	return {frontDefault: frontDefault};
 };
@@ -6271,23 +6271,19 @@ var $author$project$Pokemon$spritesDecoder = A2(
 	$elm_community$json_extra$Json$Decode$Extra$andMap,
 	A2($elm$json$Json$Decode$field, 'front_default', $elm$json$Json$Decode$string),
 	$elm$json$Json$Decode$succeed($author$project$Pokemon$Sprites));
-var $author$project$Pokemon$pokemonSpriteDecoder = function (index) {
-	return A2(
-		$elm_community$json_extra$Json$Decode$Extra$andMap,
-		A2($elm$json$Json$Decode$field, 'sprites', $author$project$Pokemon$spritesDecoder),
-		A2(
-			$elm_community$json_extra$Json$Decode$Extra$andMap,
-			$elm$json$Json$Decode$succeed(index),
-			$elm$json$Json$Decode$succeed($author$project$Pokemon$PokemonSprite)));
-};
+var $author$project$Pokemon$pokemonSpriteDecoder = A2(
+	$elm_community$json_extra$Json$Decode$Extra$andMap,
+	A2($elm$json$Json$Decode$field, 'sprites', $author$project$Pokemon$spritesDecoder),
+	$elm$json$Json$Decode$succeed($author$project$Pokemon$PokemonSprite));
 var $author$project$Main$pokemonImageCommand = F2(
 	function (index, result) {
 		return $elm$http$Http$get(
 			{
 				expect: A2(
 					$elm$http$Http$expectJson,
-					$author$project$Main$asPageMsg($author$project$Main$AcceptImageResponse),
-					$author$project$Pokemon$pokemonSpriteDecoder(index)),
+					$author$project$Main$asPageMsg(
+						$author$project$Main$AcceptImageResponse(index)),
+					$author$project$Pokemon$pokemonSpriteDecoder),
 				url: 'https://pokeapi.co/api/v2/pokemon/' + result.name
 			});
 	});
@@ -6414,13 +6410,13 @@ var $author$project$Main$updateViewListPage = F3(
 							url: url
 						}));
 			case 'AcceptImageResponse':
-				var httpResult = pageMsg.a;
+				var index = pageMsg.a;
+				var httpResult = pageMsg.b;
+				var results = pokemonList.results;
+				var listResult = A2($elm$core$Array$get, index, results);
 				if (httpResult.$ === 'Ok') {
 					var pokemonSprite = httpResult.a;
 					var sprite = pokemonSprite.sprites.frontDefault;
-					var results = pokemonList.results;
-					var index = pokemonSprite.index;
-					var listResult = A2($elm$core$Array$get, index, results);
 					var newListResult = function () {
 						if (listResult.$ === 'Just') {
 							var lr = listResult.a;
@@ -6445,13 +6441,36 @@ var $author$project$Main$updateViewListPage = F3(
 									})),
 							$elm$core$Platform$Cmd$none);
 					} else {
-						return _Utils_Tuple2(
-							$author$project$Main$ListPage(pokemonList),
-							$elm$core$Platform$Cmd$none);
+						return _Utils_Tuple2(page, $elm$core$Platform$Cmd$none);
 					}
 				} else {
 					var err = httpResult.a;
-					return _Utils_Tuple2(page, $elm$core$Platform$Cmd$none);
+					var newListResult = function () {
+						if (listResult.$ === 'Just') {
+							var lr = listResult.a;
+							return $elm$core$Maybe$Just(
+								_Utils_update(
+									lr,
+									{
+										sprite: $elm$core$Maybe$Just('https://friconix.com/png/fi-htluxl-question-mark.png')
+									}));
+						} else {
+							return $elm$core$Maybe$Nothing;
+						}
+					}();
+					if (newListResult.$ === 'Just') {
+						var newLr = newListResult.a;
+						return _Utils_Tuple2(
+							$author$project$Main$ListPage(
+								_Utils_update(
+									pokemonList,
+									{
+										results: A3($elm$core$Array$set, index, newLr, results)
+									})),
+							$elm$core$Platform$Cmd$none);
+					} else {
+						return _Utils_Tuple2(page, $elm$core$Platform$Cmd$none);
+					}
 				}
 			default:
 				return _Utils_Tuple2(page, $elm$core$Platform$Cmd$none);
